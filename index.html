@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LiveLens · AI 直播弹幕洞察助手（演示数据）</title>
+  <link rel="stylesheet" href="./assets/styles.css?v=20261023f" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">LL</div>
+      <div class="brand-text">
+        <h1>LiveLens</h1>
+        <p>AI 直播弹幕洞察助手 · <span class="scene-tag">场景测试：服装直播间</span></p>
+      </div>
+      <span class="badge badge-demo">演示数据 DEMO</span>
+    </div>
+
+    <div class="topbar-right">
+      <div class="conn">
+        <span id="conn-dot" class="dot dot-idle"></span>
+        <div class="conn-text">
+          <strong id="conn-status">未连接</strong>
+          <small id="conn-meta">弹幕源：模拟数据</small>
+        </div>
+      </div>
+      <button id="btn-analyze" class="btn btn-primary">开始分析</button>
+      <button id="btn-reset" class="btn btn-ghost">重置演示</button>
+    </div>
+  </header>
+
+  <div class="demo-note">
+    <strong>演示说明</strong> 「本地模拟源」下的弹幕全部由程序生成，<b>不是真实直播数据</b>。
+    切到「保利威直播聊天室」并输入目标频道号后，将接入官方 Web 观看页 SDK 接收该频道的真实观众消息，
+    页面会按来源标注，不会把模拟数据或手动注入的内容标成 SDK 收到的消息。接入细节见
+    <code>src/providers/polyv/README.md</code>。
+  </div>
+
+  <main class="layout">
+    <!-- 左列：实时弹幕流（约占 2/3） -->
+    <div class="col col-main">
+      <section class="card card-tall" id="card-stream">
+        <div class="card-head">
+          <h2>实时弹幕流</h2>
+          <div class="head-right">
+            <span class="tag" id="stream-status">空闲</span>
+            <span class="tag tag-muted" id="stream-count">0 条</span>
+            <span class="tag tag-warn hidden" id="stream-paused" title="鼠标悬停在弹幕流上时暂停自动清除，移开鼠标恢复">悬停暂停</span>
+          </div>
+        </div>
+        <div class="card-subhead">
+          <input id="search-input" type="text" class="search" placeholder="搜索弹幕内容 / 关键词" />
+          <div id="filter-note" class="filter-note hidden"></div>
+        </div>
+        <div class="card-body card-body-scroll">
+          <ul class="danmaku-list" id="danmaku-list"></ul>
+          <div class="empty" id="danmaku-empty">点击右上角「开始分析」后，模拟弹幕会持续流入。</div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 右列：连接与控制 + AI 洞察（各占一半） -->
+    <div class="col col-side">
+      <section class="card" id="card-control">
+        <div class="card-head">
+          <h2>连接与控制</h2>
+          <span class="tag" id="source-tag">mock</span>
+        </div>
+        <div class="card-body">
+          <div class="field">
+            <label for="sel-source">弹幕源</label>
+            <select id="sel-source">
+              <option value="mock">本地模拟源（演示数据）</option>
+              <option value="polyv">保利威直播聊天室（真实弹幕）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>房间 / 频道</label>
+            <div class="kv"><span id="room-id">-</span></div>
+          </div>
+
+          <div class="field">
+            <label for="inject-text">手动注入一条弹幕（验证解析逻辑）</label>
+            <div class="input-row">
+              <input id="inject-text" type="text" placeholder="例如：这个针织衫会起球吗" />
+              <button id="btn-inject" class="btn btn-small">注入</button>
+            </div>
+          </div>
+
+          <hr class="sep" />
+
+          <div class="field">
+            <label for="rng-sensitivity">
+              噪声敏感度 <span class="mono" id="val-sensitivity">60</span>
+            </label>
+            <input id="rng-sensitivity" type="range" min="0" max="100" step="5" value="60" />
+            <small class="hint" id="hint-sensitivity"></small>
+          </div>
+
+          <div class="field">
+            <label for="rng-similarity">
+              问题聚合相似度阈值 <span class="mono" id="val-similarity">0.45</span>
+            </label>
+            <input id="rng-similarity" type="range" min="0.35" max="0.85" step="0.05" value="0.45" />
+            <small class="hint">阈值越低，越容易把相近提问合并成同一个问题簇</small>
+          </div>
+
+          <div class="switches">
+            <label class="switch switch-primary">
+              <input id="sw-denoise" type="checkbox" checked />
+              <span>过滤干扰信息（表情包刷屏 / 与商品无关内容）</span>
+            </label>
+            <small class="hint">由商家自行决定：关闭后所有弹幕原样进入分析，统计口径随之变化</small>
+            <label class="switch">
+              <input id="sw-noise-visible" type="checkbox" />
+              <span>在弹幕流显示被过滤内容</span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section class="card card-tall" id="card-ai">
+        <div class="card-head">
+          <h2>AI 洞察 <span class="tag tag-ai" id="ai-mode-tag">模拟输出</span></h2>
+          <div class="head-right">
+            <span class="tag tag-muted" id="ai-status">待启动</span>
+            <label class="switch switch-inline">
+              <input id="sw-ai" type="checkbox" checked />
+              <span>启用</span>
+            </label>
+          </div>
+        </div>
+        <div class="card-subhead ai-subhead">
+          <small id="ai-meta">尚未生成</small>
+          <div class="ai-btns">
+            <button id="btn-ai-now" class="btn btn-tiny">立即分析</button>
+            <button id="btn-ai-retry" class="btn btn-tiny hidden">重试</button>
+          </div>
+        </div>
+        <div class="card-body card-body-scroll">
+          <div id="ai-content" class="hidden"></div>
+          <div class="empty" id="ai-empty">开启后，每个批次会把结构化摘要交给 AI 生成洞察</div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- 底部：分析结果面板 -->
+  <div class="aux-strip">
+    <section class="card">
+      <div class="card-head">
+        <h2>噪声过滤统计</h2>
+        <span class="tag tag-muted" id="stat-rate">0%</span>
+      </div>
+      <div class="card-body">
+        <div class="metrics metrics-3">
+          <div class="metric">
+            <span class="metric-label">接收弹幕</span>
+            <strong class="metric-value" id="stat-total">0</strong>
+          </div>
+          <div class="metric">
+            <span class="metric-label">有效弹幕</span>
+            <strong class="metric-value ok" id="stat-passed">0</strong>
+          </div>
+          <div class="metric">
+            <span class="metric-label">噪声过滤</span>
+            <strong class="metric-value muted" id="stat-noise">0</strong>
+          </div>
+        </div>
+        <div class="breakdown" id="noise-breakdown"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>服装行业需求分类</h2>
+        <button id="btn-clear-category" class="btn btn-tiny hidden">清除筛选</button>
+      </div>
+      <div class="card-body">
+        <div class="category-list" id="category-list"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>商家关注榜</h2>
+        <span class="tag tag-muted" id="focus-count">0 项</span>
+      </div>
+      <div class="card-body card-body-scroll">
+        <ul class="focus-list" id="focus-list"></ul>
+        <div class="empty" id="focus-empty">按「频率 × 语义 × 紧急度」综合排序后的重点问题会显示在这里</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>重复问题聚合</h2>
+        <span class="tag tag-muted" id="cluster-count">0 个问题簇</span>
+      </div>
+      <div class="card-body card-body-scroll">
+        <ul class="cluster-list" id="cluster-list"></ul>
+        <div class="empty" id="cluster-empty">暂无已识别的问题簇</div>
+      </div>
+    </section>
+
+    <section class="card card-tall">
+      <div class="card-head">
+        <h2>重要低频问题提醒</h2>
+        <span class="tag tag-warn" id="alert-count">0 条待处理</span>
+      </div>
+      <div class="card-body card-body-scroll">
+        <ul class="alert-list" id="alert-list"></ul>
+        <div class="empty" id="alert-empty">低频但高影响的问题会在此出现</div>
+      </div>
+    </section>
+  </div>
+
+  <!-- 连接直播间频道号弹窗：输入目标频道号后才真正走保利威 SDK 连接 -->
+  <div class="modal-backdrop hidden" id="room-modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="room-modal-title">
+      <div class="modal-head">
+        <h3 id="room-modal-title">连接直播间</h3>
+        <button type="button" class="modal-close" id="room-modal-close" aria-label="关闭弹窗">×</button>
+      </div>
+      <div class="modal-body">
+        <label class="modal-label" for="room-channel-input">请输入频道号</label>
+        <input id="room-channel-input" class="modal-input" type="text" inputmode="numeric"
+               autocomplete="off" spellcheck="false" placeholder="例如 8620440" />
+        <p class="modal-hint">频道号可在保利威后台「直播间 → 分享信息」中查看，仅支持数字</p>
+        <p class="modal-error hidden" id="room-modal-error" role="alert"></p>
+        <p class="modal-status hidden" id="room-modal-status" role="status"></p>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-ghost" id="room-modal-cancel">取消</button>
+        <button type="button" class="btn btn-primary" id="room-modal-confirm">连接直播间</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script type="module" src="./src/main.js?v=20261023f"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "livelens-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LiveLens · AI 直播弹幕洞察助手（黑客松 Demo，演示数据）",
+  "scripts": {
+    "start": "npx --yes serve -l 4173 .",
+    "dev": "node server/index.mjs",
+    "smoke": "node tools/smoke-test.mjs",
+    "test:ai": "node tools/ai-provider-test.mjs",
+    "version:bump": "node tools/cache-bust.mjs"
+  }
+}
